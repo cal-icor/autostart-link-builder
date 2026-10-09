@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autostart Link Builder</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #666660;
+    --border: #d9d9d4; --accent: #2a5db0; --accent-text: #ffffff;
+    --error: #b3261e; --warn-bg: #fff4d6; --warn-text: #6b4e00; --code-bg: #f0f0ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161616; --panel: #1f1f1f; --text: #ececea; --muted: #a0a09a;
+      --border: #3a3a38; --accent: #7aa7f0; --accent-text: #0d1b33;
+      --error: #f2a097; --warn-bg: #3a3014; --warn-text: #f2d98a; --code-bg: #2a2a28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161616; --panel: #1f1f1f; --text: #ececea; --muted: #a0a09a;
+    --border: #3a3a38; --accent: #7aa7f0; --accent-text: #0d1b33;
+    --error: #f2a097; --warn-bg: #3a3014; --warn-text: #f2d98a; --code-bg: #2a2a28;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 28px; }
+  label { display: block; font-weight: 600; margin: 20px 0 4px; }
+  .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 6px; }
+  textarea {
+    width: 100%; min-height: 72px; padding: 10px; resize: vertical;
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .error { color: var(--error); margin: 16px 0 0; }
+  .warn {
+    background: var(--warn-bg); color: var(--warn-text);
+    padding: 10px 12px; border-radius: 6px; margin: 16px 0 0;
+  }
+  section.result {
+    margin-top: 28px; padding: 16px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .result h2 { font-size: 1.1rem; margin: 0 0 8px; }
+  .link {
+    display: block; word-break: break-all; padding: 10px; border-radius: 6px;
+    background: var(--code-bg); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
+  button, a.button {
+    font: inherit; font-size: 0.95rem; padding: 7px 14px; border-radius: 6px;
+    cursor: pointer; text-decoration: none; border: 1px solid var(--accent);
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); }
+  a.button { background: transparent; color: var(--accent); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 16px 0 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; word-break: break-all; }
+  ol { padding-left: 20px; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 0.85rem; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Autostart Link Builder</h1>
+  <p class="lede">Make one link that logs students in, starts their server with the right settings, and pulls your materials. They won't see the server options page.</p>
+
+  <label for="permalink">1. Server settings permalink</label>
+  <p class="hint">On the hub's server options page, pick the settings and click <strong>Copy Permalink</strong>.</p>
+  <textarea id="permalink" spellcheck="false" placeholder="https://<hub>/hub/login?next=/hub/spawn%23fancy-forms-config=..."></textarea>
+
+  <label for="gitpull">2. nbgitpuller link</label>
+  <p class="hint">Make one with the nbgitpuller link generator for the same hub.</p>
+  <textarea id="gitpull" spellcheck="false" placeholder="https://<hub>/hub/user-redirect/git-pull?repo=..."></textarea>
+
+  <p class="error" id="error" hidden></p>
+  <div id="warnings"></div>
+
+  <section class="result" id="result" hidden>
+    <h2>Your link</h2>
+    <code class="link" id="link"></code>
+    <div class="actions">
+      <button class="primary" id="copy" type="button">Copy link</button>
+      <a class="button" id="open" target="_blank" rel="noopener">Try it</a>
+    </div>
+    <dl id="parts"></dl>
+  </section>
+
+  <footer>
+    <p>Students who click it:</p>
+    <ol>
+      <li>log in to the hub,</li>
+      <li>get a server started with the settings from the permalink,</li>
+      <li>land in the repository nbgitpuller pulls.</li>
+    </ol>
+    <p>If a student already has a server running, the hub goes straight to the pull. Needs fancy-profiles 0.7.0 or newer on the hub. Everything runs in your browser; nothing is sent anywhere.</p>
+  </footer>
+</main>
+<script src="builder.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const inputs = [$("permalink"), $("gitpull")];
+
+  function row(name, value) {
+    const dt = document.createElement("dt");
+    dt.textContent = name;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    return [dt, dd];
+  }
+
+  function render() {
+    const [permalink, gitpull] = inputs.map((el) => el.value.trim());
+    $("error").hidden = true;
+    $("result").hidden = true;
+    $("warnings").replaceChildren();
+    if (!permalink || !gitpull) return;
+
+    let out;
+    try {
+      out = buildAutostartLink(permalink, gitpull);
+    } catch (e) {
+      $("error").textContent = e instanceof TypeError ? "One of these isn't a complete link (it should start with https://)." : e.message;
+      $("error").hidden = false;
+      return;
+    }
+
+    for (const w of out.warnings) {
+      const p = document.createElement("p");
+      p.className = "warn";
+      p.textContent = w;
+      $("warnings").append(p);
+    }
+
+    $("link").textContent = out.link;
+    $("open").href = out.link;
+    const { settings, ...rest } = out.parts;
+    const rows = [
+      ...row("Hub", rest.hub),
+      ...row("Repository", rest.repo),
+      ...row("Branch", rest.branch),
+      ...row("Opens", rest.opens),
+    ];
+    for (const [key, value] of Object.entries(settings)) {
+      rows.push(...row(key === "profile" ? "Profile" : key, String(value)));
+    }
+    $("parts").replaceChildren(...rows);
+    $("copy").textContent = "Copy link";
+    $("result").hidden = false;
+  }
+
+  inputs.forEach((el) => el.addEventListener("input", render));
+
+  $("copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("link").textContent);
+      $("copy").textContent = "Copied";
+    } catch (e) {
+      getSelection().selectAllChildren($("link"));
+      $("copy").textContent = "Press ⌘C / Ctrl+C";
+    }
+  });
+</script>
+</body>
+</html>
